@@ -98,13 +98,17 @@ async function init() {
   await init()
   await api.downloadBudget(sync_id)
   console.log("add accounts")
-  let account_ids = new Map()
-  for (i = 0; i < account.length; i++) {
-    account_ids.set(
-      account[i],
-      await api.createAccount({ name: account[i], type: "checking" }, 0)
-    )
-    console.log(account[i], account_ids.get(account[i]))
+  let existing_accounts = await api.getAccounts();
+  let account_ids = new Map();
+  for (i=0;i<account.length;i++){
+    let existing = existing_accounts.find(act => act.name === account[i]);
+    if (existing) {
+      console.log(`reusing existing account for ${account[i]}`);
+      account_ids.set(account[i], existing.id);
+    } else {
+      console.log(`creating account for ${account[i]}`);
+      account_ids.set(account[i], await api.createAccount({name: account[i], type: "checking"},0));
+    }
   }
   try {
     await api.shutdown()
@@ -114,29 +118,31 @@ async function init() {
     console.log(error)
   }
 
-
-  console.log("add Categories:")
-  let group_id = await api.createCategoryGroup({ name: "Mint Import" })
-  console.log(group_id)
-  let initial_categories = await api.getCategories()
-  let income_group_id = initial_categories.find(
-    (cat) => cat.name === "Income"
-  ).group_id
-  category_ids = new Map()
-  for (i = 0; i < category.length; i++) {
-    console.log("creating", category[i])
-    category_ids.set(
-      category[i],
-      await api.createCategory({
-        name: category[i],
-        group_id: incomeCategories.includes(category[i])
-          ? income_group_id
-          : group_id,
-      })
-    )
-    console.log(category[i], category_ids.get(category[i]))
+  console.log("add Categories");
+  let existing_groups = await api.getCategoryGroups();
+  let mint_group = existing_groups.find(grp => grp.name === 'Mint Import');
+  let group_id = "";
+  if (mint_group) {
+    console.log(`reusing existing category group with ID: ${group_id}`);
+    group_id = mint_group.id;
+  } else {
+    group_id = await api.createCategoryGroup({name: "Mint Import"});
+    console.log(`creating category group with ID: ${group_id}`);
   }
-  console.log("categories created")
+  let initial_categories = await api.getCategories();
+  let income_group_id = initial_categories.find(cat => cat.name === 'Income').group_id;
+  category_ids = new Map();
+  for (i=0;i<category.length;i++){
+    let existing_id = initial_categories.find(cat => cat.name === category[i]);
+    if (existing_id) {
+      console.log(`reusing existing category for ${category[i]}`);
+      category_ids.set(category[i], existing_id.group_id);
+    } else {
+      console.log(`creating category for ${category[i]}`);
+      category_ids.set(category[i], await api.createCategory({name: category[i], group_id: incomeCategories.includes(category[i]) ? income_group_id : group_id}));
+    }
+  }
+
   try {
     await api.shutdown()
     await init()
